@@ -15,7 +15,7 @@ import sys
 from AppKit import NSSound
 
 # --- Configuration ---
-MODEL_SIZE = "small" # Options: "tiny", "base", "small", "medium", "large-v2", etc.
+MODEL_SIZE = "medium" # Options: "tiny", "base", "small", "medium", "large-v2", etc.
 SAMPLE_RATE = 16000
 CHANNELS = 1
 DEVICE = None # Use default device
