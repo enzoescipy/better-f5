@@ -1,7 +1,8 @@
 rumps
 pynput
 sounddevice
-faster-whisper
+openai
 pyperclip
 numpy
-py2app 
+py2app
+soundfile 

@@ -7,8 +7,9 @@ APP = ['main.py']
 DATA_FILES = []
 OPTIONS = {
     'argv_emulation': True, # Allows dropping files onto the app icon (not relevant here, but standard)
-    'packages': ['rumps', 'pynput', 'sounddevice', 'pyperclip', 'numpy', 'faster_whisper'], # faster_whisper is included
+    'packages': ['rumps', 'pynput', 'sounddevice', 'pyperclip', 'numpy', 'openai', 'soundfile'], # Updated packages for API usage
     'iconfile': None, # No custom icon for now
+    'includes': ['cffi', 'objc', 'Quartz', 'AppKit', 'CoreFoundation', 'Foundation', 'json', 'httpcore', 'httpx', '_soundfile_data', 'requests'], # Updated includes for API and soundfile usage
     'includes': ['faster_whisper', 'cffi', 'objc', 'Quartz', 'Quartz.ImageKit', 'AppKit', 'CoreFoundation', 'Foundation'], # Add more core frameworks
     'frameworks': [
         '/opt/anaconda3/lib/libffi.8.dylib',
@@ -20,11 +21,11 @@ OPTIONS = {
     'plist': {
         'CFBundleIdentifier': 'com.wielder.betterf5',
         'CFBundleName': 'BetterF5',
-        'CFBundleShortVersionString': '0.1.0',
+        'CFBundleShortVersionString': '0.2.0', # Version bump
         'LSUIElement': True, # Hide Dock icon
         'NSHumanReadableCopyright': 'Copyright © 2024 Wielder. All rights reserved.',
         'NSMicrophoneUsageDescription': 'BetterF5 needs access to the microphone to record audio for transcription when you press the hotkey.',
-        'NSAppleEventsUsageDescription': 'BetterF5 needs to monitor keyboard events globally to detect the F5 hotkey press.'
+        'NSAppleEventsUsageDescription': 'BetterF5 needs to monitor keyboard events globally to detect the F20 hotkey press.' # Updated hotkey
     }
 }
 
