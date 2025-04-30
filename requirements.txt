@@ -1,0 +1,7 @@
+rumps
+pynput
+sounddevice
+faster-whisper
+pyperclip
+numpy
+py2app 
