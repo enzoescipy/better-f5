@@ -28,12 +28,19 @@ SAMPLE_RATE = 16000
 CHANNELS = 1
 DEVICE = None # Use default device
 HOTKEY = keyboard.Key.f20
-WHISPER_API_MODEL = "whisper-1" # Added
-PREFERENCES_KEY = "openai_api_key" # Added key for settings
+# WHISPER_API_MODEL = "whisper-1" # Removed, will load from config
+# PREFERENCES_KEY = "openai_api_key" # Removed, using new config keys
+API_KEY_CONFIG_KEY = "api_key"
+API_BASE_URL_CONFIG_KEY = "api_base_url"
+MODEL_CONFIG_KEY = "model"
 APP_NAME = "BetterF5"
 CONFIG_DIR = os.path.expanduser(f"~/Library/Application Support/{APP_NAME}")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-DEFAULT_CONFIG = {"openai_api_key": "YOUR_API_KEY_HERE"}
+DEFAULT_CONFIG = {
+    API_KEY_CONFIG_KEY: "YOUR_GROQ_API_KEY_HERE", # Changed key and placeholder
+    API_BASE_URL_CONFIG_KEY: "https://api.groq.com/openai/v1/", # Added Groq base URL
+    MODEL_CONFIG_KEY: "whisper-large-v3" # Added Groq model
+}
 
 # --- States ---
 STATE_IDLE = "[ OK ]" # Merged icon text into state for simplicity
@@ -66,6 +73,8 @@ class BetterF5App(rumps.App):
         self.processing_thread = None
 
         self.api_key = None
+        self.api_base_url = None # Added
+        self.model_name = None # Added
         self.client = None
         self._load_config_and_init_client() # Load config and initialize client directly
 
@@ -89,7 +98,7 @@ class BetterF5App(rumps.App):
                     json.dump(DEFAULT_CONFIG, f, indent=4)
                 rumps.alert(
                     f"{APP_NAME} Configuration Needed",
-                    f"Configuration file created at:\n{CONFIG_FILE}\n\nPlease edit this file and add your OpenAI API key."
+                    f"Configuration file created at:\n{CONFIG_FILE}\n\nPlease edit this file and add your API key and other settings if needed."
                 )
                 self.update_state(STATE_CONFIG_ERROR)
                 return False
@@ -99,24 +108,46 @@ class BetterF5App(rumps.App):
             with open(CONFIG_FILE, 'r') as f:
                 config = json.load(f)
 
-            api_key = config.get("openai_api_key")
+            api_key = config.get(API_KEY_CONFIG_KEY)
+            api_base_url = config.get(API_BASE_URL_CONFIG_KEY)
+            model_name = config.get(MODEL_CONFIG_KEY)
 
-            if not api_key or api_key == DEFAULT_CONFIG["openai_api_key"]:
+            if not api_key or api_key == DEFAULT_CONFIG[API_KEY_CONFIG_KEY]:
                 print("API Key not found or is default in config file.")
                 rumps.alert(
                     f"{APP_NAME} API Key Needed",
-                    f"Please add your OpenAI API key to:\n{CONFIG_FILE}"
+                    f"Please add your API key to:{CONFIG_FILE}"
+                )
+                self.update_state(STATE_CONFIG_ERROR)
+                return False
+
+            if not api_base_url: # Check for base_url
+                print("API Base URL not found in config file.")
+                rumps.alert(
+                    f"{APP_NAME} Configuration Error",
+                    f"API Base URL is missing in:{CONFIG_FILE}"
+                )
+                self.update_state(STATE_CONFIG_ERROR)
+                return False
+
+            if not model_name: # Check for model_name
+                print("Model name not found in config file.")
+                rumps.alert(
+                    f"{APP_NAME} Configuration Error",
+                    f"Model name is missing in:{CONFIG_FILE}"
                 )
                 self.update_state(STATE_CONFIG_ERROR)
                 return False
 
             # Try to initialize client
-            print("API Key found in config. Initializing OpenAI client...")
+            print(f"API Key, Base URL, and Model found in config. Initializing API client...")
             self.api_key = api_key
-            self.client = openai.OpenAI(api_key=self.api_key)
-            # Optional: Test call to verify key
-            # self.client.models.list()
-            print("OpenAI client initialized successfully.")
+            self.api_base_url = api_base_url
+            self.model_name = model_name
+            self.client = openai.OpenAI(api_key=self.api_key, base_url=self.api_base_url)
+            # Optional: Test call to verify key and endpoint
+            # self.client.models.list() 
+            print("API client initialized successfully.")
             if self.state == STATE_CONFIG_ERROR: # Revert state if it was error
                  self.update_state(STATE_IDLE)
             return True
@@ -132,7 +163,7 @@ class BetterF5App(rumps.App):
             rumps.alert("Initialization Error", f"An error occurred: {e}")
             # Try to distinguish key errors from other init errors if possible
             if isinstance(e, openai.AuthenticationError):
-                 rumps.alert("API Key Invalid", f"The API key in the config file seems invalid.\n{CONFIG_FILE}")
+                 rumps.alert("API Key Invalid", f"The API key in the config file seems invalid or not authorized for the specified base URL.{CONFIG_FILE}")
             self.update_state(STATE_CONFIG_ERROR)
             self.client = None
             return False
@@ -157,7 +188,7 @@ class BetterF5App(rumps.App):
         # Check for valid client before starting
         if not self.client or self.state == STATE_CONFIG_ERROR:
              print("Recording blocked: Client not initialized or config error.")
-             rumps.alert("Configuration Needed", f"Please ensure a valid API Key is in the config file:\n{CONFIG_FILE}")
+             rumps.alert("Configuration Needed", f"Please ensure a valid API Key and configuration are in:{CONFIG_FILE}")
              return
         if self.state != STATE_IDLE:
             print("Cannot start recording, not in IDLE state.")
@@ -209,13 +240,13 @@ class BetterF5App(rumps.App):
 
         # Check client again before starting thread
         if not self.client:
-             print("Processing aborted: OpenAI client not initialized (Config/Key Error?).")
+             print("Processing aborted: API client not initialized (Config/Key Error?).")
              self.update_state(STATE_CONFIG_ERROR)
              # Maybe show alert again?
-             rumps.alert("Configuration Error", f"Cannot process audio. Please check config file:\n{CONFIG_FILE}")
+             rumps.alert("Configuration Error", f"Cannot process audio. Please check API configuration file:{CONFIG_FILE}")
              return
 
-        print("Starting audio processing via OpenAI API...")
+        print("Starting audio processing via configured API...")
         # Run processing in its own thread
         self.processing_thread = threading.Thread(target=self._process_audio_api, args=(audio_data_np,))
         self.processing_thread.start()
@@ -223,8 +254,8 @@ class BetterF5App(rumps.App):
     # Renamed from _process_audio to _process_audio_api
     def _process_audio_api(self, audio_data_np):
         # Check for client initialization
-        if not self.client:
-            print("API call skipped: Client not initialized.")
+        if not self.client or not self.model_name: # Also check model_name
+            print("API call skipped: Client or model not configured.")
             self.result_queue.put(None)
             return
         # This runs in the processing thread
@@ -239,10 +270,10 @@ class BetterF5App(rumps.App):
             # Provide the buffer with a filename hint
             file_tuple = ("audio.wav", wav_buffer)
 
-            print(f"Sending audio to OpenAI Whisper API...")
-            # Call the OpenAI API
+            print(f"Sending audio to transcription API (model: {self.model_name})...")
+            # Call the OpenAI API (which will now route to Groq via base_url)
             transcript_response = self.client.audio.transcriptions.create(
-                model=WHISPER_API_MODEL,
+                model=self.model_name, # Use model from config
                 file=file_tuple,
                 response_format="text"
             )
@@ -263,23 +294,23 @@ class BetterF5App(rumps.App):
             rumps.notification("API Rate Limit", "Rate limit exceeded.", str(e))
             self.result_queue.put(None)
         except openai.AuthenticationError as e:
-            error_message = f"OpenAI Authentication Error: {e}. Key might be invalid."
+            error_message = f"API Authentication Error: {e}. Key might be invalid or not authorized for the specified API base URL."
             print(error_message)
-            rumps.notification("API Authentication Error", "Invalid API Key in config.", f"Please check {CONFIG_FILE}")
+            rumps.notification("API Authentication Error", "Invalid API Key or unauthorized.", f"Please check {CONFIG_FILE}")
             self.client = None # De-initialize client
             # State will be updated in check_results based on None result
             self.result_queue.put(None)
         except openai.APIStatusError as e:
-             error_message = f"OpenAI API error: Status={e.status_code}, Response={e.response}"
+             error_message = f"API error: Status={e.status_code}, Response={e.response}"
              print(error_message)
              # Use message attribute if available, otherwise fallback
              detail = str(e.message) if hasattr(e, 'message') and e.message else str(e)
-             rumps.notification("OpenAI API Error", f"Status Code: {e.status_code}", detail)
+             rumps.notification("API Error", f"Status Code: {e.status_code}", detail)
              self.result_queue.put(None)
         except openai.APIError as e: # Catch other API errors
-            error_message = f"General OpenAI API error: {e}"
+            error_message = f"General API error: {e}"
             print(error_message)
-            rumps.notification("OpenAI API Error", "An API error occurred.", str(e))
+            rumps.notification("API Error", "An API error occurred.", str(e))
             self.result_queue.put(None)
         except Exception as e: # Catch any other unexpected errors during processing
             error_message = f"Transcription error (API call / WAV conversion): {e}"
